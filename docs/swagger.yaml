@@ -1,0 +1,1739 @@
+basePath: /api/v1
+definitions:
+  internal_handler.errorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  secret-service_internal_domain.AccessGrant:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      granted_by:
+        type: string
+      id:
+        type: string
+      secret_id:
+        type: string
+      user_id:
+        type: string
+    type: object
+  secret-service_internal_domain.AuditEvent:
+    properties:
+      actor_user_id:
+        type: string
+      created_at:
+        type: string
+      event_type:
+        $ref: '#/definitions/secret-service_internal_domain.AuditEventType'
+      id:
+        type: string
+      metadata:
+        items:
+          type: integer
+        type: array
+      project_id:
+        type: string
+      secret_id:
+        type: string
+    type: object
+  secret-service_internal_domain.AuditEventType:
+    enum:
+    - user_registered
+    - user_logged_in
+    - project_created
+    - project_member_added
+    - secret_created
+    - secret_read
+    - secret_read_denied
+    - access_granted
+    - access_revoked
+    - secret_revoked
+    - secret_rotated
+    type: string
+    x-enum-varnames:
+    - AuditUserRegistered
+    - AuditUserLoggedIn
+    - AuditProjectCreated
+    - AuditProjectMemberAdd
+    - AuditSecretCreated
+    - AuditSecretRead
+    - AuditSecretReadDenied
+    - AuditAccessGranted
+    - AuditAccessRevoked
+    - AuditSecretRevoked
+    - AuditSecretRotated
+  secret-service_internal_domain.Project:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      team_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  secret-service_internal_domain.ProjectMember:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      project_id:
+        type: string
+      role:
+        $ref: '#/definitions/secret-service_internal_domain.ProjectRole'
+      user_id:
+        type: string
+    type: object
+  secret-service_internal_domain.ProjectRole:
+    enum:
+    - admin
+    - manager
+    - developer
+    type: string
+    x-enum-varnames:
+    - ProjectRoleAdmin
+    - ProjectRoleManager
+    - ProjectRoleDeveloper
+  secret-service_internal_domain.ProjectTeam:
+    properties:
+      assigned_at:
+        type: string
+      assigned_by:
+        type: string
+      project_id:
+        type: string
+      team_id:
+        type: string
+    type: object
+  secret-service_internal_domain.Secret:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      environment:
+        $ref: '#/definitions/secret-service_internal_domain.SecretEnvironment'
+      expires_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      project_id:
+        type: string
+      status:
+        $ref: '#/definitions/secret-service_internal_domain.SecretStatus'
+      tags:
+        items:
+          type: string
+        type: array
+      updated_at:
+        type: string
+    type: object
+  secret-service_internal_domain.SecretEnvironment:
+    enum:
+    - development
+    - staging
+    - production
+    type: string
+    x-enum-varnames:
+    - EnvDevelopment
+    - EnvStaging
+    - EnvProduction
+  secret-service_internal_domain.SecretStatus:
+    enum:
+    - active
+    - revoked
+    type: string
+    x-enum-varnames:
+    - SecretStatusActive
+    - SecretStatusRevoked
+  secret-service_internal_domain.SecretVersion:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      id:
+        type: string
+      is_current:
+        type: boolean
+      secret_id:
+        type: string
+      version:
+        type: integer
+    type: object
+  secret-service_internal_domain.ServiceAccount:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      project_id:
+        type: string
+      status:
+        $ref: '#/definitions/secret-service_internal_domain.ServiceAccountStatus'
+      updated_at:
+        type: string
+    type: object
+  secret-service_internal_domain.ServiceAccountStatus:
+    enum:
+    - active
+    - revoked
+    type: string
+    x-enum-varnames:
+    - ServiceAccountStatusActive
+    - ServiceAccountStatusRevoked
+  secret-service_internal_domain.Team:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  secret-service_internal_domain.TeamMember:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      role:
+        $ref: '#/definitions/secret-service_internal_domain.TeamRole'
+      team_id:
+        type: string
+      user_id:
+        type: string
+    type: object
+  secret-service_internal_domain.TeamRole:
+    enum:
+    - owner
+    - member
+    type: string
+    x-enum-varnames:
+    - TeamRoleOwner
+    - TeamRoleMember
+  secret-service_internal_domain.User:
+    properties:
+      created_at:
+        type: string
+      display_name:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      is_admin:
+        type: boolean
+      is_blocked:
+        type: boolean
+      updated_at:
+        type: string
+    type: object
+  secret-service_internal_dto.AddProjectMemberRequest:
+    properties:
+      role:
+        type: string
+      user_id:
+        type: string
+    type: object
+  secret-service_internal_dto.AddTeamMemberRequest:
+    properties:
+      role:
+        type: string
+      user_id:
+        type: string
+    type: object
+  secret-service_internal_dto.AssignTeamRequest:
+    properties:
+      role:
+        description: Role assigned to each team member in the project. Defaults to
+          "developer".
+        type: string
+      team_id:
+        type: string
+    type: object
+  secret-service_internal_dto.CreateProjectRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  secret-service_internal_dto.CreateSecretRequest:
+    properties:
+      description:
+        type: string
+      environment:
+        type: string
+      expires_at:
+        type: string
+      name:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      value:
+        type: string
+    type: object
+  secret-service_internal_dto.CreateServiceAccountRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  secret-service_internal_dto.CreateServiceAccountResponse:
+    properties:
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      project_id:
+        type: string
+      token:
+        description: shown only on creation
+        type: string
+      warning:
+        type: string
+    type: object
+  secret-service_internal_dto.CreateTeamRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  secret-service_internal_dto.CreateUserRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  secret-service_internal_dto.GrantAccessRequest:
+    properties:
+      expires_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  secret-service_internal_dto.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  secret-service_internal_dto.RollbackSecretRequest:
+    properties:
+      version:
+        type: integer
+    type: object
+  secret-service_internal_dto.RotateSecretRequest:
+    properties:
+      value:
+        type: string
+    type: object
+  secret-service_internal_dto.SecretValueResponse:
+    properties:
+      secret_id:
+        type: string
+      value:
+        type: string
+    type: object
+  secret-service_internal_dto.ServiceAccountLoginRequest:
+    properties:
+      service_account_id:
+        type: string
+      token:
+        type: string
+    type: object
+  secret-service_internal_dto.StatsResponse:
+    properties:
+      audit_events_last_24h:
+        type: integer
+      expiring_secrets_7d:
+        type: integer
+      total_projects:
+        type: integer
+      total_secrets_active:
+        type: integer
+      total_secrets_revoked:
+        type: integer
+      total_service_accounts:
+        type: integer
+      total_users:
+        type: integer
+    type: object
+  secret-service_internal_dto.TokenResponse:
+    properties:
+      access_token:
+        type: string
+    type: object
+  secret-service_internal_dto.UpdateDisplayNameRequest:
+    properties:
+      display_name:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: Centralized API key storage and management service for development
+    teams.
+  title: Secret Service API
+  version: "1.0"
+paths:
+  /admin/stats:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/secret-service_internal_dto.StatsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Platform-wide statistics (admin only)
+      tags:
+      - admin
+  /audit/events:
+    get:
+      parameters:
+      - description: Filter by project ID
+        in: query
+        name: project_id
+        type: string
+      - description: Filter by event type
+        in: query
+        name: event_type
+        type: string
+      - description: Filter by actor user ID
+        in: query
+        name: actor_user_id
+        type: string
+      - description: Filter by secret ID
+        in: query
+        name: secret_id
+        type: string
+      - description: From timestamp (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: To timestamp (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Max results (default 100, max 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.AuditEvent'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all audit events (admin only)
+      tags:
+      - audit
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Email and password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/secret-service_internal_dto.TokenResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      summary: Login with email and password
+      tags:
+      - auth
+  /auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/secret-service_internal_domain.User'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - auth
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: New display name
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.UpdateDisplayNameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/secret-service_internal_domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update display name
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Email and password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/secret-service_internal_domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      summary: Register new user
+      tags:
+      - auth
+  /auth/service-login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Service account ID and token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.ServiceAccountLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/secret-service_internal_dto.TokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      summary: Authenticate service account
+      tags:
+      - service-accounts
+  /projects:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.Project'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List user projects
+      tags:
+      - projects
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Project name and description
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.CreateProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/secret-service_internal_domain.Project'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create project
+      tags:
+      - projects
+  /projects/{projectID}:
+    get:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/secret-service_internal_domain.Project'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get project by ID
+      tags:
+      - projects
+  /projects/{projectID}/audit/events:
+    get:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        type: string
+      - description: Filter by event type
+        in: query
+        name: event_type
+        type: string
+      - description: Filter by actor user ID
+        in: query
+        name: actor_user_id
+        type: string
+      - description: Filter by secret ID
+        in: query
+        name: secret_id
+        type: string
+      - description: From timestamp (RFC3339)
+        in: query
+        name: from
+        type: string
+      - description: To timestamp (RFC3339)
+        in: query
+        name: to
+        type: string
+      - description: Max results (default 100, max 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.AuditEvent'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List audit events for a project
+      tags:
+      - audit
+  /projects/{projectID}/members:
+    get:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.ProjectMember'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List project members
+      tags:
+      - projects
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: User ID and role (admin/manager/developer)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.AddProjectMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add member to project
+      tags:
+      - projects
+  /projects/{projectID}/members/{userID}:
+    delete:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove member from project (admin only)
+      tags:
+      - projects
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      - description: New role
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.AddProjectMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change project member role (admin only)
+      tags:
+      - projects
+  /projects/{projectID}/secrets:
+    get:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.Secret'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List secrets by project
+      tags:
+      - secrets
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: Secret name, description and value
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.CreateSecretRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/secret-service_internal_domain.Secret'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create secret
+      tags:
+      - secrets
+  /projects/{projectID}/secrets/{secretID}/grants:
+    get:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: Secret ID
+        in: path
+        name: secretID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.AccessGrant'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List access grants for a secret
+      tags:
+      - secrets
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: Secret ID
+        in: path
+        name: secretID
+        required: true
+        type: string
+      - description: User ID and optional expiration
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.GrantAccessRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Grant access to secret
+      tags:
+      - secrets
+  /projects/{projectID}/secrets/{secretID}/grants/{userID}:
+    delete:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: Secret ID
+        in: path
+        name: secretID
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke user access to secret
+      tags:
+      - secrets
+  /projects/{projectID}/secrets/expiring:
+    get:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: Number of days to look ahead (default 7)
+        in: query
+        name: days
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.Secret'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List secrets expiring soon
+      tags:
+      - secrets
+  /projects/{projectID}/service-accounts:
+    get:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.ServiceAccount'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List project service accounts
+      tags:
+      - service-accounts
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: Service account name and description
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.CreateServiceAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/secret-service_internal_dto.CreateServiceAccountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create service account
+      tags:
+      - service-accounts
+  /projects/{projectID}/teams:
+    get:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.ProjectTeam'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List teams assigned to a project
+      tags:
+      - projects
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: Team ID and optional role
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.AssignTeamRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Assign team to project (bulk-adds all team members)
+      tags:
+      - projects
+  /projects/{projectID}/teams/{teamID}:
+    delete:
+      parameters:
+      - description: Project ID
+        in: path
+        name: projectID
+        required: true
+        type: string
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove team link from project
+      tags:
+      - projects
+  /secrets/{secretID}/revoke:
+    post:
+      parameters:
+      - description: Secret ID
+        in: path
+        name: secretID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke secret
+      tags:
+      - secrets
+  /secrets/{secretID}/rollback:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Secret ID
+        in: path
+        name: secretID
+        required: true
+        type: string
+      - description: Target version number
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.RollbackSecretRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rollback secret to a previous version
+      tags:
+      - secrets
+  /secrets/{secretID}/rotate:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Secret ID
+        in: path
+        name: secretID
+        required: true
+        type: string
+      - description: New secret value
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.RotateSecretRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Rotate secret value
+      tags:
+      - secrets
+  /secrets/{secretID}/value:
+    get:
+      parameters:
+      - description: Secret ID
+        in: path
+        name: secretID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/secret-service_internal_dto.SecretValueResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get secret value
+      tags:
+      - secrets
+  /secrets/{secretID}/versions:
+    get:
+      parameters:
+      - description: Secret ID
+        in: path
+        name: secretID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.SecretVersion'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List secret version history
+      tags:
+      - secrets
+  /service-accounts/{saID}/revoke:
+    post:
+      parameters:
+      - description: Service account ID
+        in: path
+        name: saID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke service account
+      tags:
+      - service-accounts
+  /teams:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.Team'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List user teams
+      tags:
+      - teams
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Team name and description
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.CreateTeamRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/secret-service_internal_domain.Team'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create team
+      tags:
+      - teams
+  /teams/{teamID}/members:
+    get:
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.TeamMember'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List team members
+      tags:
+      - teams
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: string
+      - description: User ID and role (owner/member)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/secret-service_internal_dto.AddTeamMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add member to team
+      tags:
+      - teams
+  /teams/{teamID}/members/{userID}:
+    delete:
+      parameters:
+      - description: Team ID
+        in: path
+        name: teamID
+        required: true
+        type: string
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Remove member from team
+      tags:
+      - teams
+  /users:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/secret-service_internal_domain.User'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: List all users (admin only)
+      tags:
+      - users
+  /users/{userID}/block:
+    post:
+      parameters:
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Block user (admin only)
+      tags:
+      - users
+  /users/{userID}/unblock:
+    post:
+      parameters:
+      - description: User ID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_handler.errorResponse'
+      security:
+      - BearerAuth: []
+      summary: Unblock user (admin only)
+      tags:
+      - users
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

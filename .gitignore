@@ -1,0 +1,30 @@
+# Compiled binaries
+/server
+/ss
+*.exe
+*.test
+*.out
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# macOS / IDE artifacts
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Build cache
+/dist/
+/build/
+/bin/
+
+# Coverage
+coverage.out
+coverage.html
