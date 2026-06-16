@@ -1,1481 +1,432 @@
-# Secret Service — Полная документация
+# Secret Service — Technical Documentation
 
-> Централизованная система управления API-ключами и секретами для команд разработчиков.
-> Выпускная квалификационная работа (ВКР), УрФУ 2026.
-
----
-
-## Содержание
-
-1. [Обзор системы](#1-обзор-системы)
-2. [Архитектура](#2-архитектура)
-3. [База данных и схема](#3-база-данных-и-схема)
-4. [Запуск и конфигурация](#4-запуск-и-конфигурация)
-5. [Аутентификация и авторизация](#5-аутентификация-и-авторизация)
-6. [HTTP API — полный справочник](#6-http-api--полный-справочник)
-   - 6.1 [Авторизация (Auth)](#61-авторизация-auth)
-   - 6.2 [Пользователи (Users)](#62-пользователи-users)
-   - 6.3 [Команды (Teams)](#63-команды-teams)
-   - 6.4 [Проекты (Projects)](#64-проекты-projects)
-   - 6.5 [Секреты (Secrets)](#65-секреты-secrets)
-   - 6.6 [Сервисные аккаунты (Service Accounts)](#66-сервисные-аккаунты-service-accounts)
-   - 6.7 [Журнал аудита (Audit)](#67-журнал-аудита-audit)
-   - 6.8 [Администрирование (Admin)](#68-администрирование-admin)
-   - 6.9 [Системные эндпоинты](#69-системные-эндпоинты)
-7. [CLI-клиент](#7-cli-клиент)
-8. [Доменная модель](#8-доменная-модель)
-9. [Сервисный слой — бизнес-логика](#9-сервисный-слой--бизнес-логика)
-10. [Слой хранилища (Storage)](#10-слой-хранилища-storage)
-11. [Middleware](#11-middleware)
-12. [Криптография](#12-криптография)
-13. [JWT-токены](#13-jwt-токены)
-14. [Модель прав доступа](#14-модель-прав-доступа)
-15. [Аудит и журналирование](#15-аудит-и-журналирование)
-16. [Мониторинг (Prometheus)](#16-мониторинг-prometheus)
-17. [Миграции базы данных](#17-миграции-базы-данных)
+This document drills into the implementation details that don't fit in the README. For setup and feature overview, start with the [README](./README.md). For a discussion of trade-offs and design decisions, see the [Case Study](./CASE_STUDY.md). For a list of known security fixes applied before the public release, see [SECURITY.md](./SECURITY.md).
 
 ---
 
-## 1. Обзор системы
+## Table of contents
 
-**Secret Service** — это backend-сервис для безопасного хранения, распространения и управления секретами (API-ключи, токены, пароли, строки подключения) внутри команд разработчиков.
-
-### Ключевые возможности
-
-| Возможность | Описание |
-|---|---|
-| **Шифрование** | Значения секретов хранятся в зашифрованном виде (AES-256-GCM) |
-| **Версионирование** | Каждая ротация создаёт новую версию; поддерживается откат |
-| **RBAC** | Роли на уровне проекта: `admin` / `manager` / `developer` |
-| **Гранулярный доступ** | Временный доступ к конкретному секрету с TTL |
-| **Сервисные аккаунты** | Machine-to-machine аутентификация (CI/CD, деплой-скрипты) |
-| **Аудит** | Полный лог всех действий с фильтрацией |
-| **Среды** | Разделение секретов по `development` / `staging` / `production` |
-| **Теги** | Произвольные теги для группировки секретов |
-| **Команды** | Группировка пользователей с массовым назначением на проект |
-| **CLI** | Интерактивный CLI-клиент (`ss`) |
-| **Мониторинг** | Prometheus-метрики из коробки |
-| **Документация** | Swagger UI по адресу `/swagger/` |
+1. [Architecture](#1-architecture)
+2. [Database schema](#2-database-schema)
+3. [Configuration](#3-configuration)
+4. [Authentication and authorization](#4-authentication-and-authorization)
+5. [HTTP API reference](#5-http-api-reference)
+6. [CLI client](#6-cli-client)
+7. [Service layer — what each service does](#7-service-layer--what-each-service-does)
+8. [Middleware stack](#8-middleware-stack)
+9. [Cryptography](#9-cryptography)
+10. [Audit log events](#10-audit-log-events)
+11. [Permissions matrix](#11-permissions-matrix)
+12. [Production deployment notes](#12-production-deployment-notes)
 
 ---
 
-## 2. Архитектура
+## 1. Architecture
+
+The service follows a strict layered architecture. Each layer depends only on the interfaces of the next — no upward dependencies, no circular imports.
 
 ```
-cmd/
-  server/main.go      — точка входа сервера (wire-up)
-  cli/main.go         — точка входа CLI-клиента
-
-internal/
-  domain/             — доменные модели (чистые Go-структуры)
-  dto/                — объекты запросов и ответов (HTTP layer)
-  errs/               — централизованные sentinel-ошибки
-  crypto/             — AES-256-GCM шифрование
-  token/              — JWT (выдача / разбор)
-  auth/               — сервис + репозиторий пользователей
-  project/            — сервис + репозиторий проектов
-  secret/             — сервис + репозиторий секретов
-  access/             — сервис + репозиторий грантов доступа
-  serviceaccount/     — сервис + репозиторий SA
-  team/               — сервис + репозиторий команд
-  audit/              — сервис + репозиторий аудита
-  admin/              — сервис статистики (admin-only)
-  storage/            — реализации репозиториев (PostgreSQL + sqlx)
-  handler/            — HTTP-хэндлеры (chi)
-  http/               — роутер + регистрация маршрутов
-  middleware/         — Auth, Logging, RequestID, Recovery, Metrics, RateLimit
-
-migrations/           — SQL-файлы миграций (001_init.sql ... 009_*)
-docs/                 — авто-сгенерированные Swagger JSON/YAML
-
-cmd/cli/
-  config.go           — сессия (~/.secret-service/session.json)
-  commands/           — cobra-команды (login, logout, secrets, projects, ...)
-```
-
-### Поток запроса
-
-```
-HTTP Request
-    ↓
+HTTP request
+    │
+    ▼
 [Recovery] → [RequestID] → [Logging] → [Metrics]
-    ↓
-[Auth Middleware] — проверка JWT, извлечение userID
-    ↓
+    │
+    ▼
+[Auth middleware] — parses JWT, extracts Principal (user or service account)
+    │
+    ▼
 Handler (chi router)
-    ↓
-Service (бизнес-логика, проверки прав)
-    ↓
+    │
+    ▼
+Service (business logic, permission checks, audit emission)
+    │
+    ▼
 Repository interface
-    ↓
+    │
+    ▼
 storage.* (sqlx + PostgreSQL)
 ```
 
-Каждый слой зависит только от **интерфейсов** следующего — никаких циклических зависимостей, прямая инъекция зависимостей через конструкторы.
+### Source tree
+
+```
+cmd/
+  server/main.go      Server entry point — wires everything together
+  cli/main.go         CLI entry point
+
+internal/
+  domain/             Pure Go structs (User, Project, Secret, Principal)
+  dto/                Request/response objects (HTTP layer only)
+  errs/               Centralized sentinel errors
+  crypto/             AES-256-GCM encryption service
+  token/              JWT issue + parse
+  auth/               User registration, login, password hashing
+  project/            Projects + RBAC + team assignment
+  secret/             Secrets + versioning + rotation
+  access/             Time-bound access grants
+  serviceaccount/     Machine-to-machine accounts
+  team/               User groups for bulk project assignment
+  audit/              Audit log writes
+  admin/              Platform-level stats (global-admin only)
+  storage/            sqlx-backed repository implementations
+  handler/            HTTP handlers (chi)
+  http/               Router + middleware registration
+  middleware/         Auth, Logging, RequestID, Recovery, Metrics, RateLimit
+
+migrations/           SQL migrations, auto-applied on startup
+docs/                 Generated Swagger JSON/YAML
+tests/
+  unit/               Crypto and JWT tests
+  integration/        Full HTTP → DB tests via testcontainers-go
+```
+
+### Design principles
+
+- **Layered, not "clean".** No use-case package, no per-layer DTO mapping ceremony. Domain → service → repository → handler is enough at this scale.
+- **No magic.** No codegen, no dependency injection container. Constructor injection from `main.go` — read top to bottom and you understand the dependency graph.
+- **Testability first.** Integration tests run against real PostgreSQL via testcontainers-go. No mock databases.
+- **Graceful shutdown.** SIGINT/SIGTERM handled with a 10-second drain.
 
 ---
 
-## 3. База данных и схема
+## 2. Database schema
 
-СУБД: **PostgreSQL 14+**
+PostgreSQL 14+. All identifiers are TEXT (UUID-shaped), all timestamps `TIMESTAMPTZ DEFAULT NOW()`.
 
-### Таблицы
-
-#### `users`
-| Колонка | Тип | Описание |
+| Table | Purpose | Key columns |
 |---|---|---|
-| id | TEXT PK | UUID |
-| email | TEXT UNIQUE | Электронная почта |
-| display_name | TEXT | Отображаемое имя |
-| password_hash | TEXT | bcrypt-хэш пароля |
-| is_blocked | BOOLEAN | Заблокирован ли пользователь |
-| is_admin | BOOLEAN | Является ли глобальным администратором |
-| created_at | TIMESTAMPTZ | |
-| updated_at | TIMESTAMPTZ | |
+| `users` | Global user accounts | `email UNIQUE`, `password_hash`, `is_blocked`, `is_admin` |
+| `projects` | Top-level grouping for secrets | `name`, `created_by FK→users` |
+| `project_members` | RBAC at project level | `(project_id, user_id) UNIQUE`, `role CHECK IN ('admin','manager','developer')` |
+| `teams` | User groups for bulk assignment | `name`, `created_by FK→users` |
+| `team_members` | Team membership | `(team_id, user_id) UNIQUE` |
+| `project_teams` | Team-to-project bulk assignment | `(project_id, team_id) UNIQUE`, `role` |
+| `secrets` | Secret metadata (no values) | `(project_id, name) UNIQUE`, `status CHECK IN ('active','revoked')`, `environment`, `tags TEXT[]`, `expires_at` |
+| `secret_versions` | Encrypted values, versioned | `(secret_id, version) UNIQUE`, `encrypted_value BYTEA`, `nonce BYTEA`, `is_current BOOLEAN` |
+| `access_grants` | Time-bound read access | `(secret_id, user_id) UNIQUE`, `expires_at` |
+| `service_accounts` | Machine-to-machine credentials | `(project_id, name) UNIQUE`, `token_hash`, `status` |
+| `audit_events` | Append-only event log | `actor_user_id`, `project_id`, `secret_id`, `event_type`, `metadata JSONB` |
+| `schema_migrations` | Migration tracking | applied internally |
 
-> Первый зарегистрированный пользователь автоматически получает `is_admin = TRUE`.
+Key indexes:
+- `secret_versions`: partial index on `(secret_id) WHERE is_current = TRUE` — makes "fetch current value" O(1)
+- `audit_events`: composite indexes on `(project_id, created_at DESC)` and `(secret_id, created_at DESC)` for paginated listing
 
-#### `projects`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | UUID |
-| name | TEXT | Название проекта |
-| description | TEXT | Описание |
-| team_id | TEXT FK→teams | Опциональная привязка к команде |
-| created_by | TEXT FK→users | Создатель |
-| created_at | TIMESTAMPTZ | |
-| updated_at | TIMESTAMPTZ | |
-
-#### `project_members`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | |
-| project_id | TEXT FK→projects | |
-| user_id | TEXT FK→users | |
-| role | TEXT | `admin` / `manager` / `developer` |
-| created_at | TIMESTAMPTZ | |
-
-Уникальный индекс: `(project_id, user_id)`.
-
-#### `teams`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | UUID |
-| name | TEXT UNIQUE | Название команды |
-| description | TEXT | |
-| created_by | TEXT FK→users | |
-| created_at | TIMESTAMPTZ | |
-| updated_at | TIMESTAMPTZ | |
-
-#### `team_members`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | |
-| team_id | TEXT FK→teams | |
-| user_id | TEXT FK→users | |
-| role | TEXT | `owner` / `member` |
-| created_at | TIMESTAMPTZ | |
-
-#### `project_teams`
-| Колонка | Тип | Описание |
-|---|---|---|
-| project_id | TEXT FK→projects | PK часть |
-| team_id | TEXT FK→teams | PK часть |
-| assigned_by | TEXT | ID пользователя, назначившего команду |
-| assigned_at | TIMESTAMPTZ | |
-
-Записывает факт назначения команды на проект. При назначении все текущие участники команды добавляются в `project_members`.
-
-#### `secrets`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | UUID |
-| project_id | TEXT FK→projects | |
-| name | TEXT | Уникально в рамках проекта |
-| description | TEXT | |
-| status | TEXT | `active` / `revoked` |
-| environment | TEXT | `development` / `staging` / `production` |
-| tags | TEXT[] | Произвольные теги |
-| expires_at | TIMESTAMPTZ NULL | TTL секрета |
-| created_by | TEXT FK→users | |
-| created_at | TIMESTAMPTZ | |
-| updated_at | TIMESTAMPTZ | |
-
-Уникальный индекс: `(project_id, name)`.
-
-#### `secret_versions`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | UUID |
-| secret_id | TEXT FK→secrets | |
-| version | INT | Номер версии (начиная с 1) |
-| encrypted_value | BYTEA | Зашифрованное значение (AES-256-GCM) |
-| nonce | BYTEA | Одноразовый nonce для GCM |
-| is_current | BOOLEAN | Текущая активная версия |
-| created_by | TEXT FK→users | |
-| created_at | TIMESTAMPTZ | |
-
-Уникальный индекс: `(secret_id, version)`. Индекс на `(secret_id) WHERE is_current = TRUE`.
-
-#### `access_grants`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | UUID |
-| secret_id | TEXT FK→secrets | |
-| user_id | TEXT FK→users | |
-| granted_by | TEXT FK→users | |
-| expires_at | TIMESTAMPTZ NULL | Опциональный TTL гранта |
-| created_at | TIMESTAMPTZ | |
-
-Уникальный индекс: `(secret_id, user_id)` — один грант на пару.
-
-#### `service_accounts`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | UUID |
-| project_id | TEXT FK→projects | |
-| name | TEXT | Уникально в рамках проекта |
-| description | TEXT | |
-| token_hash | TEXT | bcrypt-хэш токена |
-| status | TEXT | `active` / `revoked` |
-| created_by | TEXT FK→users | |
-| created_at | TIMESTAMPTZ | |
-| updated_at | TIMESTAMPTZ | |
-
-#### `audit_events`
-| Колонка | Тип | Описание |
-|---|---|---|
-| id | TEXT PK | UUID |
-| actor_user_id | TEXT FK→users NULL | Кто совершил действие |
-| project_id | TEXT FK→projects NULL | В контексте какого проекта |
-| secret_id | TEXT FK→secrets NULL | С каким секретом |
-| event_type | TEXT | Тип события (см. раздел 15) |
-| metadata | JSONB | Дополнительные данные |
-| created_at | TIMESTAMPTZ | |
-
-Составные индексы: `(project_id, created_at DESC)`, `(secret_id, created_at DESC)`.
-
-#### `schema_migrations`
-Служебная таблица для отслеживания применённых SQL-миграций.
+Migrations live in `/migrations` and are applied automatically on startup. Order matters — `001_init.sql` builds the base schema; later files add teams, environments, tags, project_teams, and TTLs.
 
 ---
 
-## 4. Запуск и конфигурация
+## 3. Configuration
 
-### Переменные окружения
+All configuration via environment variables. No config files.
 
-| Переменная | Обязательная | Описание | Пример |
+| Variable | Required | Default | Description |
 |---|---|---|---|
-| `DATABASE_URL` | ✅ | Строка подключения к PostgreSQL | `postgres://user:pass@localhost:5432/secrets` |
-| `AES_KEY_HEX` | ✅ | 32-байтовый ключ шифрования в hex (64 символа) | `a1b2c3...` (64 hex-символа) |
-| `JWT_SECRET` | ✅ | Секрет для подписи JWT | `supersecret` |
-| `PORT` | ❌ | Порт HTTP-сервера (по умолчанию `8080`) | `8080` |
-| `LOG_LEVEL` | ❌ | Уровень логирования: `DEBUG`, `INFO`, `WARN`, `ERROR` | `INFO` |
+| `DB_HOST` | no | `localhost` | PostgreSQL host |
+| `DB_PORT` | no | `5432` | PostgreSQL port |
+| `DB_USER` | no | `postgres` | PostgreSQL user |
+| `DB_PASSWORD` | no | `postgres` | PostgreSQL password |
+| `DB_NAME` | no | `secret_service` | Database name |
+| `DB_SSLMODE` | no | `disable` | One of `disable`, `require`, `verify-ca`, `verify-full` |
+| `AES_KEY_HEX` | **yes** | — | 32-byte AES-256 key as 64 hex chars. Generate with `openssl rand -hex 32`. |
+| `JWT_SECRET` | **yes** | — | JWT signing secret, minimum 32 characters |
+| `ADDR` | no | `:8080` | Server bind address |
+| `LOG_LEVEL` | no | `info` | One of `debug`, `info`, `warn`, `error` |
+| `MIGRATIONS_DIR` | no | `./migrations` | Path to SQL migration files |
+| `TRUST_PROXY` | no | `0` | Set to `1` to honor `X-Forwarded-For` from a known reverse proxy |
 
-### Запуск сервера
-
-```bash
-export DATABASE_URL="postgres://user:pass@localhost:5432/secrets?sslmode=disable"
-export AES_KEY_HEX="0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
-export JWT_SECRET="my-secret-key"
-go run ./cmd/server
-```
-
-При запуске автоматически:
-1. Проверяется наличие и корректность всех обязательных переменных
-2. Выполняются все непримененные SQL-миграции
-3. Запускается HTTP-сервер с graceful shutdown (ожидает SIGINT / SIGTERM, таймаут 15 с)
-
-### Запуск CLI
-
-```bash
-go run ./cmd/cli --help
-# или после сборки:
-./ss --help
-```
+The server validates all required variables on startup and exits with a clear error if any is missing or malformed.
 
 ---
 
-## 5. Аутентификация и авторизация
+## 4. Authentication and authorization
 
-### Пользовательские JWT-токены
+### Principal abstraction
 
-- Алгоритм: **HS256**
-- TTL: **24 часа**
-- Payload: `user_id`, `sub: "user"`, `is_admin`
-- Передаются в заголовке: `Authorization: Bearer <token>`
+After the auth middleware parses a JWT, it builds a `domain.Principal` and puts it in the request context. Every handler reads the principal — no handler ever reads a raw user ID directly.
 
-### Токены сервисных аккаунтов
-
-- Алгоритм: **HS256**
-- TTL: **1 час** (намеренно короткий)
-- Payload: `user_id` (= ID сервис-аккаунта), `sub: "service_account"`, `project_id`
-- Передаются так же: `Authorization: Bearer <token>`
-
-### Схема проверки доступа к секрету
-
-```
-Запрос GET /secrets/{id}/value
-    ↓
-Секрет активен? (status = 'active') и не истёк? (expires_at > NOW())
-    ↓
-Пользователь — участник проекта?
-  → Да: доступ разрешён
-  → Нет: есть активный access_grant для этого пользователя?
-      → Да + grant не истёк: доступ разрешён
-      → Нет: 403 Forbidden, событие audit secret_read_denied
-```
-
-### Глобальная роль `is_admin`
-
-Глобальные администраторы могут:
-- Просматривать список всех пользователей
-- Блокировать / разблокировать пользователей
-- Просматривать глобальный аудит-лог
-- Получать статистику платформы (`GET /admin/stats`)
-
----
-
-## 6. HTTP API — полный справочник
-
-Базовый URL: `http://localhost:8080`
-Swagger UI: `http://localhost:8080/swagger/`
-
-Все защищённые эндпоинты требуют заголовок:
-```
-Authorization: Bearer <jwt_token>
-```
-
----
-
-### 6.1 Авторизация (Auth)
-
-#### `POST /api/v1/auth/register` — Регистрация пользователя
-
-Публичный. Ограничен rate limiter'ом (5 req/s).
-
-**Тело запроса:**
-```json
-{
-  "email": "alice@example.com",
-  "password": "strongpassword123"
-}
-```
-
-**Ответ `201`:**
-```json
-{
-  "id": "uuid",
-  "email": "alice@example.com",
-  "display_name": "",
-  "is_blocked": false,
-  "is_admin": true,
-  "created_at": "2026-03-18T10:00:00Z",
-  "updated_at": "2026-03-18T10:00:00Z"
-}
-```
-> Первый зарегистрированный пользователь получает `is_admin: true`.
-
-**Ошибки:** `400` — пустой email/пароль, `409` — email уже занят.
-
----
-
-#### `POST /api/v1/auth/login` — Вход в систему
-
-Публичный. Ограничен rate limiter'ом.
-
-**Тело запроса:**
-```json
-{
-  "email": "alice@example.com",
-  "password": "strongpassword123"
-}
-```
-
-**Ответ `200`:**
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
-
-**Ошибки:** `401` — неверные учётные данные, `403` — пользователь заблокирован.
-
----
-
-#### `GET /api/v1/auth/me` — Информация о текущем пользователе
-
-🔒 Требует JWT.
-
-**Ответ `200`:** объект `User`.
-
----
-
-#### `PATCH /api/v1/auth/me` — Обновить отображаемое имя
-
-🔒 Требует JWT.
-
-**Тело запроса:**
-```json
-{
-  "display_name": "Alice Smith"
-}
-```
-
-**Ответ `200`:** обновлённый объект `User`.
-
----
-
-### 6.2 Пользователи (Users)
-
-#### `GET /api/v1/users` — Список всех пользователей
-
-🔒 Только `is_admin = true`.
-
-**Параметры запроса:** `?limit=20&offset=0`
-
-**Ответ `200`:** массив объектов `User`.
-
----
-
-#### `POST /api/v1/users/{userID}/block` — Заблокировать пользователя
-
-🔒 Только `is_admin`. Нельзя заблокировать себя.
-
-**Ответ `204`** — нет тела.
-
----
-
-#### `POST /api/v1/users/{userID}/unblock` — Разблокировать пользователя
-
-🔒 Только `is_admin`. Нельзя разблокировать себя.
-
-**Ответ `204`** — нет тела.
-
----
-
-### 6.3 Команды (Teams)
-
-Команда — это именованная группа пользователей. Команду можно одним действием назначить на проект, добавив всех участников как members.
-
-#### `POST /api/v1/teams` — Создать команду
-
-🔒 Требует JWT.
-
-**Тело:**
-```json
-{
-  "name": "Backend Team",
-  "description": "Команда backend-разработчиков"
-}
-```
-
-**Ответ `201`:** объект `Team`. Создатель автоматически получает роль `owner`.
-
----
-
-#### `GET /api/v1/teams` — Список команд текущего пользователя
-
-🔒 Требует JWT.
-
-**Ответ `200`:** массив объектов `Team`.
-
----
-
-#### `POST /api/v1/teams/{teamID}/members` — Добавить участника в команду
-
-🔒 Только `owner` команды.
-
-**Тело:**
-```json
-{
-  "user_id": "uuid",
-  "role": "member"
-}
-```
-Допустимые роли: `owner`, `member`.
-
-**Ответ `204`**.
-
----
-
-#### `DELETE /api/v1/teams/{teamID}/members/{userID}` — Удалить участника из команды
-
-🔒 Только `owner` команды.
-
-**Ответ `204`**.
-
----
-
-#### `GET /api/v1/teams/{teamID}/members` — Список участников команды
-
-🔒 Требует JWT.
-
-**Ответ `200`:** массив объектов `TeamMember`.
-
----
-
-### 6.4 Проекты (Projects)
-
-Проект — основная единица разграничения секретов. Каждый секрет принадлежит одному проекту.
-
-#### `POST /api/v1/projects` — Создать проект
-
-🔒 Требует JWT.
-
-**Тело:**
-```json
-{
-  "name": "payment-service",
-  "description": "Платёжный микросервис"
-}
-```
-
-**Ответ `201`:** объект `Project`. Создатель автоматически становится `admin`.
-
----
-
-#### `GET /api/v1/projects` — Список проектов текущего пользователя
-
-🔒 Требует JWT.
-
-**Параметры:** `?limit=20&offset=0`
-
-**Ответ `200`:** массив объектов `Project`.
-
----
-
-#### `GET /api/v1/projects/{projectID}` — Получить проект по ID
-
-🔒 Только участники проекта.
-
-**Ответ `200`:** объект `Project`.
-
----
-
-#### `GET /api/v1/projects/{projectID}/members` — Список участников проекта
-
-🔒 Любой участник проекта.
-
-**Параметры:** `?limit=20&offset=0`
-
-**Ответ `200`:** массив объектов `ProjectMember`.
-
----
-
-#### `POST /api/v1/projects/{projectID}/members` — Добавить участника
-
-🔒 Только `admin` проекта.
-
-**Тело:**
-```json
-{
-  "user_id": "uuid",
-  "role": "developer"
-}
-```
-Допустимые роли: `admin`, `manager`, `developer`.
-
-**Ответ `204`**. Если пользователь уже является участником — роль обновляется (upsert).
-
----
-
-#### `PATCH /api/v1/projects/{projectID}/members/{userID}` — Изменить роль участника
-
-🔒 Только `admin` проекта.
-
-**Тело:**
-```json
-{
-  "role": "manager"
-}
-```
-
-**Ответ `204`**.
-
----
-
-#### `DELETE /api/v1/projects/{projectID}/members/{userID}` — Удалить участника
-
-🔒 Только `admin` проекта. Нельзя удалить себя.
-
-**Ответ `204`**.
-
----
-
-#### `POST /api/v1/projects/{projectID}/teams` — Назначить команду на проект
-
-🔒 Только `admin` проекта.
-
-Массово добавляет всех текущих участников команды в проект с указанной ролью. Записывает связь в `project_teams`.
-
-**Тело:**
-```json
-{
-  "team_id": "uuid",
-  "role": "developer"
-}
-```
-`role` — необязательный, по умолчанию `developer`.
-
-**Ответ `204`**.
-
----
-
-#### `DELETE /api/v1/projects/{projectID}/teams/{teamID}` — Снять команду с проекта
-
-🔒 Только `admin` проекта.
-
-Удаляет запись из `project_teams`. **Не удаляет** участников из `project_members` — пользователи остаются в проекте.
-
-**Ответ `204`**.
-
----
-
-#### `GET /api/v1/projects/{projectID}/teams` — Список назначенных команд
-
-🔒 Любой участник проекта.
-
-**Ответ `200`:** массив объектов `ProjectTeam`.
-
-```json
-[
-  {
-    "project_id": "uuid",
-    "team_id": "uuid",
-    "assigned_by": "uuid",
-    "assigned_at": "2026-03-18T10:00:00Z"
-  }
-]
-```
-
----
-
-### 6.5 Секреты (Secrets)
-
-Секрет — именованная зашифрованная запись внутри проекта. Значение никогда не хранится в открытом виде.
-
-#### `POST /api/v1/projects/{projectID}/secrets` — Создать секрет
-
-🔒 Только `admin` / `manager` проекта.
-
-**Тело:**
-```json
-{
-  "name": "STRIPE_API_KEY",
-  "description": "Stripe payment secret key",
-  "value": "sk_live_...",
-  "environment": "production",
-  "tags": ["payment", "external"],
-  "expires_at": "2026-12-31T23:59:59Z"
-}
-```
-
-| Поле | Обязательное | Описание |
-|---|---|---|
-| `name` | ✅ | Уникально в рамках проекта |
-| `value` | ✅ | Секретное значение (шифруется немедленно) |
-| `description` | ❌ | Описание |
-| `environment` | ❌ | `development` / `staging` / `production` (умолч. `production`) |
-| `tags` | ❌ | Массив строк-тегов |
-| `expires_at` | ❌ | Дата истечения в ISO 8601 |
-
-**Ответ `201`:** объект `Secret` (без значения).
-
----
-
-#### `GET /api/v1/projects/{projectID}/secrets` — Список секретов проекта
-
-🔒 Любой участник проекта.
-
-**Параметры фильтрации:**
-
-| Параметр | Описание | Пример |
-|---|---|---|
-| `?environment=` | Фильтр по среде | `?environment=production` |
-| `?status=` | Фильтр по статусу | `?status=active` |
-| `?name=` | Поиск по имени (ILIKE, без учёта регистра) | `?name=stripe` |
-| `?tag=` | Фильтр по тегу (можно несколько; секрет должен содержать ВСЕ теги) | `?tag=payment&tag=external` |
-| `?limit=` | Размер страницы (умолч. 20, макс. 200) | `?limit=50` |
-| `?offset=` | Смещение | `?offset=20` |
-
-**Ответ `200`:** массив объектов `Secret`.
-
----
-
-#### `GET /api/v1/secrets/{secretID}/value` — Получить значение секрета
-
-🔒 Участник проекта **или** пользователь с активным `access_grant`.
-
-Расшифровывает и возвращает актуальное значение. Регистрирует событие `secret_read` в аудите.
-
-**Ответ `200`:**
-```json
-{
-  "secret_id": "uuid",
-  "value": "sk_live_..."
-}
-```
-
-**Ошибки:** `403` — нет доступа (фиксируется как `secret_read_denied`), `410` — секрет отозван или истёк.
-
----
-
-#### `POST /api/v1/secrets/{secretID}/revoke` — Отозвать секрет
-
-🔒 Только `admin` / `manager` проекта.
-
-Переводит секрет в статус `revoked`. После этого его значение нельзя получить.
-
-**Ответ `204`**.
-
----
-
-#### `POST /api/v1/secrets/{secretID}/rotate` — Ротация значения секрета
-
-🔒 Только `admin` / `manager` проекта.
-
-Создаёт новую версию секрета. Старая версия сохраняется в истории (можно откатить).
-
-**Тело:**
-```json
-{
-  "value": "sk_live_newvalue..."
-}
-```
-
-**Ответ `204`**.
-
----
-
-#### `GET /api/v1/secrets/{secretID}/versions` — История версий
-
-🔒 Любой участник проекта.
-
-Возвращает метаданные версий **без** зашифрованных значений.
-
-**Ответ `200`:**
-```json
-[
-  {
-    "id": "uuid",
-    "secret_id": "uuid",
-    "version": 3,
-    "is_current": true,
-    "created_by": "uuid",
-    "created_at": "2026-03-18T10:00:00Z"
-  },
-  {
-    "version": 2,
-    "is_current": false,
-    ...
-  }
-]
-```
-
----
-
-#### `POST /api/v1/secrets/{secretID}/rollback` — Откат на предыдущую версию
-
-🔒 Только `admin` / `manager` проекта.
-
-**Тело:**
-```json
-{
-  "version": 2
-}
-```
-
-Атомарно переключает текущую версию на указанную (одним SQL-запросом).
-
-**Ответ `204`**.
-
----
-
-#### `GET /api/v1/projects/{projectID}/secrets/expiring` — Секреты с истекающим сроком
-
-🔒 Любой участник проекта.
-
-**Параметры:** `?days=7` (по умолчанию 7, любое положительное число).
-
-Возвращает активные секреты, у которых `expires_at` наступит в течение следующих N дней, отсортированные по возрастанию `expires_at`.
-
-**Ответ `200`:** массив объектов `Secret`.
-
----
-
-#### `GET /api/v1/projects/{projectID}/secrets/{secretID}/grants` — Список грантов доступа
-
-🔒 Только `admin` / `manager` проекта.
-
-**Ответ `200`:** массив объектов `AccessGrant`.
-
----
-
-#### `POST /api/v1/projects/{projectID}/secrets/{secretID}/grants` — Выдать доступ
-
-🔒 Только `admin` / `manager` проекта.
-
-**Тело:**
-```json
-{
-  "user_id": "uuid",
-  "expires_at": "2026-04-01T00:00:00Z"
-}
-```
-`expires_at` — необязательный. Если указан — грант истечёт автоматически.
-
-**Ответ `204`**. Если грант уже существует — обновляется (upsert).
-
----
-
-#### `DELETE /api/v1/projects/{projectID}/secrets/{secretID}/grants/{userID}` — Отозвать доступ
-
-🔒 Только `admin` / `manager` проекта.
-
-**Ответ `204`**.
-
----
-
-### 6.6 Сервисные аккаунты (Service Accounts)
-
-Сервисные аккаунты используются для machine-to-machine аутентификации (CI/CD, деплой-скрипты). Токен показывается **один раз** при создании.
-
-#### `POST /api/v1/projects/{projectID}/service-accounts` — Создать SA
-
-🔒 Только `admin` / `manager` проекта.
-
-**Тело:**
-```json
-{
-  "name": "github-actions-deployer",
-  "description": "Деплой из GitHub Actions"
-}
-```
-
-**Ответ `201`:**
-```json
-{
-  "id": "uuid",
-  "project_id": "uuid",
-  "name": "github-actions-deployer",
-  "description": "...",
-  "token": "sa_a1b2c3d4e5...",
-  "warning": "Save this token — it is shown only once"
-}
-```
-
-> Токен хранится как bcrypt-хэш. Сохраните его немедленно.
-
----
-
-#### `POST /api/v1/auth/service-login` — Аутентификация SA
-
-Публичный. Ограничен rate limiter'ом.
-
-**Тело:**
-```json
-{
-  "service_account_id": "uuid",
-  "token": "sa_a1b2c3d4e5..."
-}
-```
-
-**Ответ `200`:**
-```json
-{
-  "access_token": "eyJ..."
-}
-```
-
-JWT-токен SA действует **1 час** (короткий TTL для безопасности). Токен содержит `project_id`.
-
----
-
-#### `GET /api/v1/projects/{projectID}/service-accounts` — Список SA проекта
-
-🔒 Любой участник проекта.
-
-**Ответ `200`:** массив объектов `ServiceAccount` (без `token_hash`).
-
----
-
-#### `POST /api/v1/service-accounts/{saID}/revoke` — Отозвать SA
-
-🔒 Только `admin` / `manager` проекта.
-
-**Ответ `204`**.
-
----
-
-### 6.7 Журнал аудита (Audit)
-
-#### `GET /api/v1/projects/{projectID}/audit/events` — Аудит проекта
-
-🔒 Только участники проекта.
-
-**Параметры фильтрации:**
-
-| Параметр | Описание |
-|---|---|
-| `?event_type=` | Тип события (например, `secret_read`) |
-| `?actor_user_id=` | Кто совершил действие |
-| `?secret_id=` | По конкретному секрету |
-| `?from=` | С даты (ISO 8601) |
-| `?to=` | По дату (ISO 8601) |
-| `?limit=` | Количество (1–500, умолч. 100) |
-
-**Ответ `200`:** массив объектов `AuditEvent`.
-
----
-
-#### `GET /api/v1/audit/events` — Глобальный аудит-лог
-
-🔒 Только `is_admin`.
-
-Поддерживает те же параметры фильтрации. Возвращает события по всей платформе.
-
----
-
-### 6.8 Администрирование (Admin)
-
-#### `GET /api/v1/admin/stats` — Статистика платформы
-
-🔒 Только `is_admin`.
-
-Выполняет один агрегирующий SQL-запрос и возвращает сводку по всей платформе.
-
-**Ответ `200`:**
-```json
-{
-  "total_users": 42,
-  "total_projects": 15,
-  "total_secrets_active": 230,
-  "total_secrets_revoked": 18,
-  "total_service_accounts": 9,
-  "audit_events_last_24h": 87,
-  "expiring_secrets_7d": 3
-}
-```
-
-| Поле | Описание |
-|---|---|
-| `total_users` | Все пользователи |
-| `total_projects` | Все проекты |
-| `total_secrets_active` | Активные секреты |
-| `total_secrets_revoked` | Отозванные секреты |
-| `total_service_accounts` | Активные сервисные аккаунты |
-| `audit_events_last_24h` | Количество событий за последние 24 ч |
-| `expiring_secrets_7d` | Активные секреты с истечением в ближайшие 7 дней |
-
----
-
-### 6.9 Системные эндпоинты
-
-#### `GET /health` — Проверка состояния
-
-Публичный. Пингует БД с таймаутом 2 секунды.
-
-**Ответ `200`:**
-```json
-{"status": "ok", "db": "reachable"}
-```
-
-**Ответ `503`** (если БД недоступна):
-```json
-{"status": "unavailable", "db": "unreachable"}
-```
-
----
-
-#### `GET /metrics` — Prometheus-метрики
-
-Публичный. Возвращает метрики в формате Prometheus text exposition.
-
----
-
-#### `GET /swagger/*` — Swagger UI
-
-Публичный. Интерактивная документация API.
-
----
-
-## 7. CLI-клиент
-
-### Установка и сборка
-
-```bash
-go build -o ss ./cmd/cli
-./ss --help
-```
-
-### Конфигурация сессии
-
-Сессия хранится в файле `~/.secret-service/session.json` с правами `0600`:
-```json
-{
-  "token": "eyJ...",
-  "server_url": "http://localhost:8080"
-}
-```
-
-### Доступные команды
-
-#### `ss login` — Вход
-
-Запрашивает email интерактивно, пароль вводится без эха (скрытый ввод через `golang.org/x/term`). Сохраняет JWT-токен в сессию.
-
-#### `ss logout` — Выход
-
-Удаляет локальный файл сессии.
-
-#### `ss whoami` — Текущий пользователь
-
-Выводит информацию о вошедшем пользователе.
-
-#### `ss projects` — Управление проектами
-
-```
-ss projects list              — список проектов
-ss projects create <name>     — создать проект
-ss projects members <id>      — участники проекта
-```
-
-#### `ss secrets` — Управление секретами
-
-```
-ss secrets list <project-id>              — список секретов
-ss secrets create <project-id>            — создать секрет (значение вводится скрыто)
-ss secrets get <secret-id>               — получить значение
-ss secrets rotate <secret-id>            — ротация (новое значение вводится скрыто)
-```
-
-#### `ss run` — Запуск скрипта с секретами
-
-Загружает секреты проекта как переменные окружения и выполняет команду:
-```bash
-ss run <project-id> -- npm run deploy
-```
-
----
-
-## 8. Доменная модель
-
-Ядро системы — пакет `internal/domain`. Содержит только чистые Go-структуры без зависимостей от БД или HTTP.
-
-### Иерархия сущностей
-
-```
-User (глобальный)
-  └── ProjectMember → Project
-                         ├── Secret
-                         │     ├── SecretVersion (история)
-                         │     └── AccessGrant (гранулярный доступ)
-                         ├── ServiceAccount
-                         └── ProjectTeam → Team
-                                             └── TeamMember → User
-```
-
-### Роли
-
-**Роли в проекте (`ProjectRole`):**
-- `admin` — полный контроль: управление участниками, секретами, командами
-- `manager` — управление секретами (создание, ротация, отзыв, гранты)
-- `developer` — чтение секретов при наличии гранта
-
-**Роли в команде (`TeamRole`):**
-- `owner` — управление составом команды
-- `member` — обычный участник
-
-**Глобальные роли (`is_admin`):**
-- Управление пользователями, глобальный аудит, статистика
-
----
-
-## 9. Сервисный слой — бизнес-логика
-
-Каждый сервис получает зависимости через интерфейсы (репозитории, вспомогательные сервисы) и содержит всю бизнес-логику. Хэндлеры вызывают только методы сервисов.
-
-### `auth.Service`
-
-```
-CreateUser(email, password)
-  → хэширует пароль (bcrypt)
-  → первый пользователь → is_admin = true
-  → пишет аудит: user_registered
-
-Login(email, password)
-  → ищет пользователя по email
-  → сравнивает bcrypt хэш
-  → заблокирован? → 403
-  → генерирует JWT (24 ч)
-  → пишет аудит: user_logged_in
-
-BlockUser(actorID, targetID)
-  → actor должен быть is_admin
-  → actor != target (нельзя заблокировать себя)
-  → пишет аудит: user_blocked
-
-UnblockUser(actorID, targetID)
-  → actor должен быть is_admin
-  → actor != target
-  → пишет аудит: user_unblocked
-```
-
-### `project.Service`
-
-```
-CreateProject(actorID, name, desc)
-  → создаёт Project
-  → добавляет создателя как admin в project_members
-  → пишет аудит: project_created
-
-AssignTeam(actorID, projectID, teamID, role)
-  → actor должен быть admin проекта
-  → записывает project_teams
-  → получает всех участников команды
-  → для каждого: AddMember(..., role) — upsert
-  → пишет аудит: project_team_assigned
-
-RemoveMember(actorID, projectID, targetID)
-  → actor должен быть admin
-  → actor != target (нельзя удалить себя)
-```
-
-### `secret.Service`
-
-```
-CreateSecret(actorID, projectID, name, ..., tags, expiresAt)
-  → actor должен быть admin / manager
-  → шифрует value → AES-256-GCM
-  → создаёт Secret + SecretVersion (version=1, is_current=true)
-  → пишет аудит: secret_created
-
-GetSecretValue(actorID, secretID)
-  → статус active? expires_at > NOW()?
-  → CanReadSecret: member проекта ИЛИ active access_grant
-  → нет доступа → аудит: secret_read_denied
-  → расшифровывает текущую версию
-  → пишет аудит: secret_read
-
-RotateSecret(actorID, secretID, newValue)
-  → actor: admin / manager
-  → сбрасывает is_current у всех версий
-  → создаёт новую версию (n+1, is_current=true)
-  → пишет аудит: secret_rotated
-
-RollbackSecret(actorID, secretID, version)
-  → actor: admin / manager
-  → проверяет, что версия существует
-  → атомарный UPDATE: is_current = (version = $target)
-  → пишет аудит: secret_rolled_back
-
-ListExpiringSecrets(actorID, projectID, days)
-  → actor: любой участник
-  → SQL: WHERE expires_at > NOW() AND expires_at <= NOW() + (days * 1 day)
-```
-
-### `access.Service`
-
-```
-CanReadSecret(projectID, secretID, userID)
-  → участник проекта? → true
-  → активный access_grant без истечения или expires_at > NOW()? → true
-  → иначе false
-
-GrantAccess(actorID, projectID, secretID, userID, expiresAt)
-  → actor: admin / manager проекта
-  → upsert access_grant
-  → аудит: access_granted
-
-ListGrants(actorID, projectID, secretID)
-  → actor: admin / manager
-```
-
----
-
-## 10. Слой хранилища (Storage)
-
-Все репозитории находятся в `internal/storage/`, используют `github.com/jmoiron/sqlx`.
-
-### Паттерны
-
-**Динамический WHERE:**
 ```go
-// Пример из ListSecretsByProject
-args := []interface{}{projectID}
-where := "project_id = $1"
-idx := 2
-
-if f.Environment != nil {
-    where += fmt.Sprintf(" AND environment = $%d", idx)
-    args = append(args, *f.Environment); idx++
-}
-if len(f.Tags) > 0 {
-    where += fmt.Sprintf(" AND tags @> $%d", idx)
-    args = append(args, pq.StringArray(f.Tags)); idx++
-}
-args = append(args, limit, offset)
-q := fmt.Sprintf(`SELECT * FROM secrets WHERE %s LIMIT $%d OFFSET $%d`, where, idx, idx+1)
-```
-
-**Обработка конфликтов:**
-```go
-var pqErr *pq.Error
-if errors.As(err, &pqErr) && pqErr.Code == "23505" {
-    return errs.ErrConflict
+type Principal struct {
+    Kind      PrincipalKind // "user" or "service_account"
+    UserID    string        // only set when Kind == "user"
+    SAID      string        // only set when Kind == "service_account"
+    ProjectID string        // scope for service accounts
+    IsAdmin   bool          // global admin flag, users only
 }
 ```
 
-**Not Found:**
-```go
-func mapNotFound(err error) error {
-    if errors.Is(err, sql.ErrNoRows) {
-        return errs.ErrNotFound
-    }
-    return err
-}
+This separation is enforced — calling `Principal.GetUserID()` on a service-account principal returns the empty string, so any handler that requires a user is automatically protected against an SA token sneaking through.
+
+### User tokens
+
+- Algorithm: HS256
+- TTL: 24 hours
+- Required claims: `exp`, `iss`, `aud`, `sub: "user"`, `user_id`, `is_admin`
+- Validated on every request: token must be signed with HS256, must have `exp`, must match issuer and audience
+
+### Service account tokens
+
+- Algorithm: HS256
+- TTL: 1 hour (intentionally short — these are machine credentials)
+- Required claims: `exp`, `iss`, `aud`, `sub: "service_account"`, `user_id` (= SA ID), `project_id`
+
+### Per-request revocation
+
+When the auth middleware validates a token, it also looks up the actor's current status in the database:
+- If a user is blocked, the JWT is rejected even though it hasn't expired
+- If a service account is revoked, the JWT is rejected immediately
+
+This adds one database query per authenticated request. For higher-throughput deployments, see the caching note in [Production deployment notes](#12-production-deployment-notes).
+
+### Access check chain for `GET /secrets/{secretID}/value`
+
 ```
-
-### Репозитории
-
-| Структура | Файл | Ключевые методы |
-|---|---|---|
-| `UserRepo` | `user_repo.go` | Create, GetByID, GetByEmail, Block, Unblock, ListAll, UpdateDisplayName |
-| `ProjectRepo` | `project_repo.go` | CreateProject, GetProjectByID, AddMember, RemoveMember, UpdateMemberRole, ListMembers, AssignTeam, UnassignTeam, ListProjectTeams |
-| `SecretRepo` | `secret_repo.go` | CreateSecret, GetSecretByID, ListSecretsByProject, UpdateSecretStatus, CreateVersion, GetCurrentVersion, ListVersions, SetCurrentVersion, ListExpiringSecrets |
-| `AccessGrantRepo` | `access_audit_repo.go` | CreateGrant, DeleteGrant, GetGrant, ListGrants |
-| `AuditRepo` | `access_audit_repo.go` | CreateEvent, ListProjectEvents, ListSecretEvents, ListEvents |
-| `ServiceAccountRepo` | `sa_repo.go` | Create, GetByID, GetByProjectID, UpdateStatus, ListByProject |
-| `TeamRepo` | `team_repo.go` | CreateTeam, GetByID, ListByUser, AddMember, RemoveMember, GetMember, ListMembers |
-| `StatsRepo` | `stats_repo.go` | GetStats (один агрегирующий запрос) |
+1. Secret exists, status = 'active', not expired
+2. Caller is a user:
+   a. User is a member of the parent project        → allow
+   b. Active access_grant exists for (secret, user) → allow
+   c. Otherwise                                     → deny + audit secret_read_denied
+3. Caller is a service account:
+   a. SA is bound to the secret's project           → allow
+   b. Otherwise                                     → deny + audit secret_read_denied
+```
 
 ---
 
-## 11. Middleware
+## 5. HTTP API reference
 
-Порядок применения в роутере: **Recovery → RequestID → Logging → Metrics**
-
-### Recovery
-
-Перехватывает паники в хэндлерах. Логирует через `slog.ErrorContext` с полями `error`, `request_id`, `path`. Возвращает `500 Internal Server Error`.
-
-### RequestID
-
-Читает заголовок `X-Request-ID`. Если отсутствует — генерирует новый UUID. Сохраняет в контекст, устанавливает заголовок ответа. Используется во всех последующих логах.
-
-### Logging (slog)
-
-Структурированное JSON-логирование каждого запроса:
-```json
-{
-  "time": "2026-03-18T10:00:00Z",
-  "level": "INFO",
-  "msg": "request",
-  "method": "GET",
-  "path": "/api/v1/secrets/uuid/value",
-  "status": 200,
-  "duration_ms": 12,
-  "request_id": "550e8400-...",
-  "remote_addr": "192.168.1.1:54321"
-}
-```
-
-### Metrics
-
-Собирает Prometheus-метрики для каждого запроса:
-- `http_requests_total` (counter) — по `method`, `path`, `status`
-- `http_request_duration_seconds` (histogram) — по `method`, `path`
+Base URL: `http://localhost:8080`. All requests require `Authorization: Bearer <token>` unless noted. The Swagger UI at `/swagger/` is always the authoritative reference; this section is a navigator.
 
 ### Auth
 
-Извлекает JWT из `Authorization: Bearer <token>`. При валидном токене кладёт `userID` в контекст (`UserIDKey`). При невалидном — `401 Unauthorized`.
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/v1/auth/register` | Public, rate-limited. First registered user becomes global admin. |
+| POST | `/api/v1/auth/login` | Public, rate-limited. Returns access token. |
+| POST | `/api/v1/auth/service-login` | Public, rate-limited. Service account auth via `(SA_ID, token)`. |
+| GET | `/api/v1/auth/me` | Current user info. |
+| PATCH | `/api/v1/auth/me` | Update display name. |
 
-### RateLimiter
+### Users (global admin only)
 
-Per-IP rate limiting с token bucket алгоритмом (`golang.org/x/time/rate`). Применяется только на публичных эндпоинтах `/auth/register`, `/auth/login`, `/auth/service-login`.
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/users` | List all users. |
+| POST | `/api/v1/users/{userID}/block` | Block a user. Blocked users can't authenticate. |
+| POST | `/api/v1/users/{userID}/unblock` | Unblock a user. |
 
-- **Лимит:** 5 запросов/сек, burst 10
-- **Очистка:** каждые 5 минут удаляет записи для IP, не делавших запросов > 1 минуты
-- При превышении: `429 Too Many Requests`
+### Projects
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/v1/projects` | Creator becomes project admin. |
+| GET | `/api/v1/projects` | Projects the caller is a member of. |
+| GET | `/api/v1/projects/{projectID}` | Project detail. |
+| GET / POST / PATCH / DELETE | `/api/v1/projects/{projectID}/members[/{userID}]` | Member CRUD; project admin only. |
+| GET / POST / DELETE | `/api/v1/projects/{projectID}/teams[/{teamID}]` | Team assignment; project admin only. |
+
+### Teams
+
+| Method | Path | Notes |
+|---|---|---|
+| POST / GET | `/api/v1/teams` | Create team, list caller's teams. |
+| GET / POST / DELETE | `/api/v1/teams/{teamID}/members[/{userID}]` | Manage team membership. |
+
+### Secrets
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/v1/projects/{projectID}/secrets` | Create secret; admin/manager only. |
+| GET | `/api/v1/projects/{projectID}/secrets` | List with `environment` and `tags` filters, paginated. |
+| GET | `/api/v1/secrets/{secretID}/value` | Decrypted value; audited. |
+| POST | `/api/v1/secrets/{secretID}/revoke` | Mark secret as revoked; reads are denied. |
+| POST | `/api/v1/secrets/{secretID}/rotate` | Creates a new version, sets it as current. |
+| GET | `/api/v1/secrets/{secretID}/versions` | Version history. |
+| POST | `/api/v1/secrets/{secretID}/rollback` | Set a previous version as current. |
+| GET | `/api/v1/projects/{projectID}/secrets/expiring` | Secrets expiring within N days (capped at 3650). |
+| GET / POST / DELETE | `/api/v1/projects/{projectID}/secrets/{secretID}/grants[/{userID}]` | Time-bound access grants. |
+
+### Service accounts
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/v1/projects/{projectID}/service-accounts` | Returns plaintext token *once*. |
+| GET | `/api/v1/projects/{projectID}/service-accounts` | List SAs in project; admin/manager only. |
+| POST | `/api/v1/service-accounts/{saID}/revoke` | Revoke an SA. Existing tokens are rejected at the next request. |
+
+### Audit
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/projects/{projectID}/audit/events` | Project-scoped audit, filterable by event type and date range. |
+| GET | `/api/v1/audit/events` | Global audit log; global admin only. |
+
+### System
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/health` | Liveness probe. |
+| GET | `/metrics` | Prometheus metrics. |
+| GET | `/swagger/*` | Interactive API documentation. |
 
 ---
 
-## 12. Криптография
+## 6. CLI client
 
-### Алгоритм: AES-256-GCM
+The CLI lives in `cmd/cli` and is built with `cobra`. It maintains session state in `~/.secret-service/session.json` (mode `0600`).
 
-Файл: `internal/crypto/aesgcm.go`
+```bash
+ss login --email alice@example.com           # prompts for password, saves session
+ss logout                                    # clears session
+ss whoami                                    # current user
 
-```go
-type AESGCMService struct {
-    key []byte  // ровно 32 байта (AES-256)
-}
+ss projects list
+ss projects create --name "my-app"
 
-// Encrypt: генерирует случайный 12-байтовый nonce,
-// шифрует plainText, возвращает (cipherText, nonce)
-func (s *AESGCMService) Encrypt(plainText []byte) ([]byte, []byte, error)
+ss secrets list --project my-app --env prod
+ss secrets set   --project my-app --name DATABASE_URL --value "postgres://..."
+ss secrets get   --project my-app --name DATABASE_URL
+ss secrets rotate --project my-app --name DATABASE_URL --value "postgres://..."
 
-// Decrypt: воссоздаёт GCM с сохранённым nonce,
-// расшифровывает и проверяет аутентификационный тег
-func (s *AESGCMService) Decrypt(cipherText, nonce []byte) ([]byte, error)
+ss run --project my-app --env prod -- ./deploy.sh
+# Loads all secrets in the project/env as env vars and execs the command.
+# Useful in CI pipelines.
 ```
-
-**Особенности:**
-- Каждая версия секрета имеет уникальный nonce — повторное использование ключа+nonce невозможно
-- GCM обеспечивает аутентификацию (AEAD) — подмена шифртекста обнаруживается
-- `AES_KEY_HEX` проверяется при старте: ровно 64 hex-символа (32 байта)
-- Значения версий никогда не возвращаются в API (только расшифрованный plaintext через `GetSecretValue`)
 
 ---
 
-## 13. JWT-токены
+## 7. Service layer — what each service does
 
-Файл: `internal/token/jwt.go`
+Each service receives its dependencies (repositories, helper services) through interfaces. Handlers only call service methods — never repositories directly.
 
-### Claims
+### `auth.Service`
+- `Register` — hashes password (bcrypt, cost 10), enforces password length 8–72 bytes, makes the first user a global admin, emits `user_registered`.
+- `Login` — looks up user, constant-time bcrypt comparison (uses `DummyCompare` if user doesn't exist to defeat timing-based enumeration), checks `is_blocked`, issues JWT, emits `user_logged_in`.
+- `BlockUser` / `UnblockUser` — global-admin only, can't act on yourself.
 
-```go
-type Claims struct {
-    UserID    string
-    Subject   string  // "user" или "service_account"
-    IsAdmin   bool
-    ProjectID string  // только для SA, указывает привязанный проект
-    jwt.RegisteredClaims
-}
-```
+### `project.Service`
+- `Create` — creates project + adds creator as `admin` in `project_members`.
+- `AssignTeam` — project admin only, upserts team members into the project at the given role; rejects unknown roles.
+- `AddMember` / `RemoveMember` / `UpdateMemberRole` — admin only.
 
-### Методы
+### `secret.Service`
+- `Create` — admin/manager only, encrypts value (AES-256-GCM), creates secret + version 1 (`is_current=true`).
+- `GetValue` — runs the access check chain (see §4), decrypts current version, emits `secret_read` or `secret_read_denied`.
+- `Rotate` — clears `is_current` on existing versions, creates a new version with `is_current=true`.
+- `Rollback` — atomic UPDATE that sets `is_current = (version = $target)` in a single statement.
+- `ListExpiring` — `WHERE expires_at <= NOW() + interval` (the previous `expires_at > NOW()` filter was a bug — already-expired secrets were silently hidden).
 
-| Метод | Описание |
+### `access.Service`
+- `CanRead` — checks project membership or active grant.
+- `Grant` / `Revoke` — admin/manager only. Verifies the secret actually belongs to the URL's project (defends against IDOR — see [SECURITY.md](./SECURITY.md)).
+
+### `serviceaccount.Service`
+- `Create` — generates a random token, stores its bcrypt hash, returns the plaintext exactly once.
+- `Authenticate` — looks up SA, bcrypt-compares token, checks `status='active'`, returns SA-scoped JWT.
+
+### `team.Service`
+- `Create`, `AddMember`, `RemoveMember`, `ListMembers` — straightforward CRUD with `actor` checks.
+
+### `audit.Service`
+- `Log` — central emission point; logs failures to stderr but never blocks the calling operation.
+
+---
+
+## 8. Middleware stack
+
+Applied in order:
+
+| Middleware | Purpose |
 |---|---|
-| `GenerateWithClaims(userID, isAdmin)` | Создаёт пользовательский JWT (24 ч) |
-| `GenerateForSA(saID, projectID)` | Создаёт SA JWT (1 ч) |
-| `Parse(tokenStr)` | Извлекает только userID |
-| `ParseClaims(tokenStr)` | Извлекает полный объект Claims |
+| **Recovery** | Catches panics, logs with `slog`, returns 500. Never leaks panic message to client. |
+| **RequestID** | Reads `X-Request-ID` or generates UUID. Echoes in response header. |
+| **Logging** | Structured per-request log: method, path, status, duration, request_id, remote_addr. |
+| **Metrics** | Prometheus `http_requests_total` (counter, by method/path/status) and `http_request_duration_seconds` (histogram). |
+| **Auth** | Parses JWT, builds `Principal`, attaches to context. Per-request blocked/revoked check. |
+| **RateLimit** | Per-IP token bucket on `/auth/*` endpoints. 5 req/s, burst 10. Trusts `X-Forwarded-For` only when `TRUST_PROXY=1`. |
 
 ---
 
-## 14. Модель прав доступа
+## 9. Cryptography
 
-### Матрица прав
+`internal/crypto/aesgcm.go`. AES-256-GCM, stdlib only.
 
-| Действие | `developer` | `manager` | `admin` | `is_admin` (глобал.) |
+```go
+func (s *AESGCMService) Encrypt(plain []byte) (cipherText, nonce []byte, err error)
+func (s *AESGCMService) Decrypt(cipherText, nonce []byte) (plain []byte, err error)
+```
+
+Properties:
+- Key length checked at construction — exactly 32 bytes, or constructor returns an error.
+- Nonce is generated fresh per encryption via `crypto/rand`. Never reused.
+- GCM provides authentication (AEAD) — ciphertext tampering is detected during decryption.
+- Decryption returns a generic "decryption failed" error — no oracle for key validation vs. data corruption.
+
+`AES_KEY_HEX` is validated at server startup: exactly 64 hex characters. Server exits if invalid.
+
+---
+
+## 10. Audit log events
+
+Every state-changing operation emits an audit event. Audit reads are paginated and filterable by event type and date range. Events are append-only at the application level — no API exists to delete them.
+
+| Event | Trigger |
+|---|---|
+| `user_registered` | Successful registration |
+| `user_logged_in` | Successful login |
+| `user_blocked` / `user_unblocked` | Admin action on a user |
+| `project_created` | New project |
+| `project_member_added` / `_removed` / `_role_changed` | Membership changes |
+| `project_team_assigned` / `_unassigned` | Team↔project linkage |
+| `secret_created` / `_revoked` / `_rotated` / `_rolled_back` | Secret lifecycle |
+| `secret_read` | Successful value read |
+| `secret_read_denied` | Failed value read |
+| `access_granted` / `access_revoked` | Grant lifecycle |
+| `service_account_created` / `_revoked` | SA lifecycle |
+
+Each event carries `actor_user_id`, optional `project_id` and `secret_id`, plus a `metadata JSONB` blob for context-specific fields.
+
+---
+
+## 11. Permissions matrix
+
+| Action | `developer` | `manager` | `admin` | Global `is_admin` |
 |---|---|---|---|---|
-| Просмотр метаданных секрета | ✅ | ✅ | ✅ | — |
-| Чтение значения секрета | 🔑* | ✅ | ✅ | — |
-| Создание / ротация / откат секрета | ❌ | ✅ | ✅ | — |
-| Отзыв секрета | ❌ | ✅ | ✅ | — |
-| Выдача / отзыв гранта доступа | ❌ | ✅ | ✅ | — |
-| Просмотр грантов | ❌ | ✅ | ✅ | — |
-| Управление участниками проекта | ❌ | ❌ | ✅ | — |
-| Назначение/снятие команды | ❌ | ❌ | ✅ | — |
-| Список пользователей | ❌ | ❌ | ❌ | ✅ |
-| Блокировка пользователей | ❌ | ❌ | ❌ | ✅ |
-| Глобальный аудит-лог | ❌ | ❌ | ❌ | ✅ |
-| Статистика платформы | ❌ | ❌ | ❌ | ✅ |
+| Read secret metadata | ✓ | ✓ | ✓ | — |
+| Read secret value | grant only | ✓ | ✓ | — |
+| Create / rotate / rollback secret | ✗ | ✓ | ✓ | — |
+| Revoke secret | ✗ | ✓ | ✓ | — |
+| Grant / revoke access | ✗ | ✓ | ✓ | — |
+| List grants | ✗ | ✓ | ✓ | — |
+| Manage project members | ✗ | ✗ | ✓ | — |
+| Assign / unassign teams | ✗ | ✗ | ✓ | — |
+| List all users | ✗ | ✗ | ✗ | ✓ |
+| Block / unblock users | ✗ | ✗ | ✗ | ✓ |
+| Global audit log | ✗ | ✗ | ✗ | ✓ |
+| Platform statistics | ✗ | ✗ | ✗ | ✓ |
 
-> 🔑* `developer` может читать секрет, если для него выдан активный `access_grant`.
-
----
-
-## 15. Аудит и журналирование
-
-### Типы событий аудита
-
-| `event_type` | Когда генерируется |
-|---|---|
-| `user_registered` | Регистрация пользователя |
-| `user_logged_in` | Успешный вход |
-| `user_blocked` | Блокировка пользователя |
-| `user_unblocked` | Разблокировка пользователя |
-| `project_created` | Создание проекта |
-| `project_member_added` | Добавление участника в проект |
-| `project_team_assigned` | Назначение команды на проект |
-| `secret_created` | Создание секрета |
-| `secret_read` | Успешное чтение значения секрета |
-| `secret_read_denied` | Отказ в доступе к секрету |
-| `secret_revoked` | Отзыв секрета |
-| `secret_rotated` | Ротация значения |
-| `secret_rolled_back` | Откат на предыдущую версию |
-| `access_granted` | Выдача гранта доступа |
-| `access_revoked` | Отзыв гранта доступа |
-| `team_created` | Создание команды |
-
-### Структурированные логи (slog)
-
-Сервер пишет JSON-логи в stdout. Уровень управляется переменной `LOG_LEVEL`.
-
-Пример лога паники:
-```json
-{
-  "time": "2026-03-18T10:00:00Z",
-  "level": "ERROR",
-  "msg": "panic recovered",
-  "error": "runtime error: index out of range",
-  "request_id": "550e8400-...",
-  "path": "/api/v1/secrets/uuid/value"
-}
-```
+`developer` can read a secret value only if a non-expired `access_grant` exists for them.
 
 ---
 
-## 16. Мониторинг (Prometheus)
+## 12. Production deployment notes
 
-Доступно на `GET /metrics`.
+What you'd need to harden this for a real production deployment. None of these are bugs — they're scope choices documented honestly.
 
-### Метрики
+**Bring your own KMS.** Don't pass `AES_KEY_HEX` directly in production env vars. Load it from AWS KMS / GCP KMS / Vault Transit at startup. Losing the key means losing every encrypted secret — back it up, separately from the database.
 
-#### `http_requests_total` (Counter)
-Общее количество HTTP-запросов.
+**TLS termination upstream.** The service speaks plain HTTP. Put it behind nginx, Caddy, or a cloud load balancer. If you do, set `TRUST_PROXY=1` so the rate limiter reads the real client IP from `X-Forwarded-For`.
 
-**Labels:** `method`, `path`, `status`
+**Database-level audit hardening.** The audit log is append-only at the application layer — no API endpoint to delete events. At the PostgreSQL level, a superuser can still tamper. For regulated environments, add trigger-based append-only enforcement or ship audit events to an external append-only store (Loki, BigQuery, S3 + Object Lock).
 
-```promql
-# RPS по методу
-rate(http_requests_total[1m])
+**Cache the per-request blocked/revoked check.** The auth middleware looks up the actor's current status in the database on every request. At low traffic this is fine. Above ~100 RPS, cache the status with a 10-second TTL — accepts a 10-second window for revocation to take effect in exchange for one DB round-trip per request.
 
-# Количество ошибок 5xx
-sum(http_requests_total{status=~"5.."})
-```
+**Rotate the AES key.** The service stores all versions encrypted under the same key. To rotate, you'd need a re-encryption job: decrypt with the old key, encrypt with the new, swap. Not implemented yet.
 
-#### `http_request_duration_seconds` (Histogram)
-Время обработки запросов.
+**Automate secret rotation.** Versioning is supported; rotation policy is not. Pair with an external scheduler that calls `/secrets/{id}/rotate` on a schedule, optionally invoking a customer-provided rotation hook to update downstream systems.
 
-**Labels:** `method`, `path`
-
-**Buckets:** 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s
-
-```promql
-# Медиана latency
-histogram_quantile(0.5, rate(http_request_duration_seconds_bucket[5m]))
-
-# 99-й перцентиль
-histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))
-```
+**Run integration tests in CI with Docker available.** The repository's `integration/` tests use testcontainers-go and require a Docker daemon. They cover the full HTTP → service → DB path including the access-grant chain and per-request revocation. The CI workflow in `.github/workflows/ci.yml` is configured to run them.
 
 ---
 
-## 17. Миграции базы данных
-
-Миграции применяются **автоматически при старте сервера** через функцию `storage.RunMigrations()`.
-
-Состояние отслеживается в таблице `schema_migrations`. Уже применённые файлы пропускаются.
-
-| Файл | Содержание |
-|---|---|
-| `001_init.sql` | Базовые таблицы: users, projects, project_members, secrets, secret_versions, access_grants, audit_events |
-| `002_service_accounts.sql` | Таблица service_accounts |
-| `003_user_fields.sql` | Поля display_name, is_blocked в users |
-| `004_teams.sql` | Таблицы teams, team_members; поле team_id в projects |
-| `005_user_admin.sql` | Поле is_admin в users |
-| `006_secret_ttl.sql` | Поле expires_at в secrets |
-| `007_secret_environment.sql` | Поле environment в secrets |
-| `008_secret_tags.sql` | Поле tags (TEXT[]) в secrets |
-| `009_project_teams.sql` | Таблица project_teams |
-
-Для добавления новой миграции: создайте файл `0NN_description.sql` в директории `migrations/`. При следующем старте он будет применён автоматически.
-
----
-
-*Документация актуальна на дату: март 2026.*
+*Last updated: 2026. For changes since publication, see git history and [SECURITY.md](./SECURITY.md).*
