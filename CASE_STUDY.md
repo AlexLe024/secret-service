@@ -141,6 +141,6 @@ If you're reading this because you're considering hiring me — this is the leve
 ---
 
 **Tech:** Go 1.25, PostgreSQL 14, chi, sqlx, JWT, AES-256-GCM, Prometheus, Docker, testcontainers-go
-**Source:** [github.com/your-username/secret-service](https://github.com/your-username/secret-service)
+**Source:** [github.com/AlexLe024/secret-service](https://github.com/AlexLe024/secret-service)
 **Live demo:** [demo.your-domain.com](https://demo.your-domain.com) — credentials in the README
-**Contact:** [your.email@example.com] · [linkedin.com/in/yourhandle]
+**Contact:** [a.gorlyshkov@gmail.com]
