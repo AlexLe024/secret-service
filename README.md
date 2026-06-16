@@ -220,13 +220,13 @@ Honest list of what you'd need to harden this for a real production deployment:
 
 ## About
 
-Built by **[Your Name]** as a graduation project at Ural Federal University, 2026.
+Built by Alexandr Gorlyshkov as a graduation project at Ural Federal University, 2026.
 
 I'm available for backend engineering contracts — Go, Python (FastAPI), and Node.js. Particularly interested in security-sensitive services, fintech integrations, and devtools.
 
-- Email: [your.email@example.com]
-- LinkedIn: [linkedin.com/in/yourhandle]
-- Portfolio: [your-portfolio-url]
+- Email: [a.gorlyshkov@gmail.com]
+- LinkedIn: []
+- Portfolio: []
 
 If you're building something where this kind of code would be useful, let's talk.
 
