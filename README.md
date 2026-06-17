@@ -104,7 +104,7 @@ tests/            Unit + integration tests
 **Prerequisites:** Docker + Docker Compose.
 
 ```bash
-git clone https://github.com/<your-username>/secret-service.git
+git clone https://github.com/AlexLe024/secret-service.git
 cd secret-service
 
 # Generate a 32-byte AES key (64 hex chars) and a JWT secret
@@ -161,7 +161,7 @@ This is a secrets service — the security model deserves its own section.
 
 ## API overview
 
-Full reference: see [DOCUMENTATION.md](./DOCUMENTATION.md) (1500+ lines).
+Full reference: see [DOCUMENTATION.md](./DOCUMENTATION.md).
 
 | Endpoint group | Purpose |
 |---|---|
@@ -220,13 +220,12 @@ Honest list of what you'd need to harden this for a real production deployment:
 
 ## About
 
-Built by **[Your Name]** as a graduation project at Ural Federal University, 2026.
+Built by Alexandr Gorlyshkov as a graduation project at Ural Federal University, 2026.
 
 I'm available for backend engineering contracts — Go, Python (FastAPI), and Node.js. Particularly interested in security-sensitive services, fintech integrations, and devtools.
 
-- Email: [your.email@example.com]
-- LinkedIn: [linkedin.com/in/yourhandle]
-- Portfolio: [your-portfolio-url]
+- Email: [a.gorlyshkov@gmail.com](mailto:a.gorlyshkov@gmail.com)
+- GitHub: [AlexLe024](https://github.com/AlexLe024)
 
 If you're building something where this kind of code would be useful, let's talk.
 
